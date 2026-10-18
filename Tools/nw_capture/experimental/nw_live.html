@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New World live</title>
+<style>
+  :root {
+    --paper: #f3ecdc; --paper-2: #ebe2cf; --ink: #2a2622; --ink-soft: #6b6157; --rule: #cdbfa5;
+    --me: #8c2f2b; --player: #2f4b7c; --other: #8a7b66; --ok: #4d7c4a; --warn: #a8641e;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.45 var(--serif); color: var(--ink); background: var(--paper);
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: 100%; overflow: hidden;
+  }
+  #map { position: relative; overflow: hidden; background: var(--paper-2); touch-action: none; min-width: 0; }
+  #hudLayers, #hudGear, #hudPos { overflow-wrap: anywhere; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+  aside {
+    display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--rule);
+    background: var(--paper);
+    background-image: linear-gradient(0deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+    background-size: 100% 28px;
+  }
+  .card {
+    position: absolute; padding: 10px 12px; background: rgba(243,236,220,0.92); border: 1px solid var(--rule);
+    box-shadow: 2px 3px 0 rgba(42,38,34,0.12); max-width: min(360px, calc(100% - 24px));
+  }
+  #status { top: 12px; left: 12px; font-size: 12px; color: var(--ink-soft); }
+  #status b { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; }
+  #hud { left: 12px; bottom: 12px; min-width: 260px; }
+  #feed { right: 12px; bottom: 12px; font-size: 12px; max-height: 40%; overflow: hidden; padding: 6px 10px; min-width: 200px; }
+  #opr { left: 12px; top: 56px; font-size: 12px; padding: 6px 10px; min-width: 260px; max-height: 42%; overflow: auto; }
+  #opr table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 11px; }
+  #opr td, #opr th { padding: 1px 6px 1px 0; text-align: right; white-space: nowrap; }
+  #opr td:first-child, #opr th:first-child { text-align: left; font-family: var(--serif); }
+  #opr .ally { color: #2f7c4b; } #opr .enemy { color: #c0392b; } #opr .me { font-weight: bold; }
+  #opr .score { font-size: 18px; font-family: var(--serif); display: flex; justify-content: space-between; }
+  #feed div { display: flex; justify-content: space-between; gap: 10px; }
+  #feed b { font-family: var(--mono); font-weight: normal; }
+  tr.ally td:nth-child(2) { color: #2f7c4b; } tr.enemy td:nth-child(2) { color: #c0392b; }
+  #feed .hit { color: var(--me); } #feed .heal { color: var(--ok); } #feed .dealt { color: var(--ink); }
+  #feed .chat span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+  #feed .chat b { font-family: var(--serif); }
+  #feed hr { border: 0; border-top: 1px solid var(--rule); margin: 4px 0; }
+  #tools { top: 12px; right: 12px; display: flex; gap: 6px; padding: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  #tools button { white-space: nowrap; }
+  h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; letter-spacing: 0.02em; }
+  h1 small { font-weight: normal; color: var(--ink-soft); font-size: 12px; margin-left: 6px; }
+  .bar { margin: 6px 0; font-size: 12px; }
+  .bar .label { display: flex; justify-content: space-between; color: var(--ink-soft); }
+  .bar .label b { color: var(--ink); font-family: var(--mono); font-weight: normal; }
+  .bar .track { height: 8px; border: 1px solid var(--ink); background: var(--paper-2); margin-top: 2px; }
+  .bar .fill { height: 100%; background: var(--me); transition: width 0.25s; }
+  .bar.mana .fill { background: var(--player); }
+  .bar.stamina .fill { background: var(--ok); }
+  .bar .note { color: var(--ink-soft); font-style: italic; }
+  .cd { display: grid; grid-template-columns: minmax(52px, 140px) 1fr 48px; gap: 6px; align-items: center; font-size: 12px; margin: 3px 0; }
+  .cd > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cd .track { height: 6px; border: 1px solid var(--ink); background: var(--paper-2); }
+  .cd .fill { height: 100%; background: var(--warn); }
+  .cd.ready .fill { background: var(--ok); }
+  .cd b { font-family: var(--mono); font-weight: normal; text-align: right; }
+  .cd .id { font-family: var(--mono); color: var(--ink-soft); font-size: 11px; }
+  button {
+    font: 12px var(--serif); color: var(--ink); background: var(--paper); border: 1px solid var(--ink);
+    padding: 4px 9px; cursor: pointer; box-shadow: 1px 1px 0 var(--ink);
+  }
+  button:active { box-shadow: none; transform: translate(1px, 1px); }
+  button.on { background: var(--ink); color: var(--paper); }
+  aside header { padding: 12px 14px 8px; border-bottom: 1px solid var(--rule); }
+  aside header .hint { font-size: 12px; color: var(--ink-soft); font-style: italic; }
+  #tableWrap { overflow: auto; flex: 1; min-height: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--paper); font-weight: normal; color: var(--ink-soft);
+       font-style: italic; border-bottom: 1px solid var(--ink); }
+  td.num { font-family: var(--mono); font-size: 11.5px; text-align: right; }
+  th.num { text-align: right; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: rgba(42,38,34,0.05); }
+  tbody tr.me { background: rgba(140,47,43,0.09); }
+  tbody tr.focused td:first-child { text-decoration: underline; }
+  tbody tr.stale { opacity: 0.45; }
+  tbody tr.me td:first-child::before { content: "\25CF"; color: var(--me); margin-right: 5px; }
+  tbody tr.named td:first-child::before { content: "\25CF"; color: var(--player); margin-right: 5px; }
+  tbody tr.animal td:first-child::before { content: "\25CB"; color: #7a5c2e; margin-right: 5px; }
+  .dim { color: var(--ink-soft); }
+  .warn { color: var(--warn); }
+  #drawerToggle { display: none; }
+  @media (max-width: 820px) {
+    body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+    #hudLayers { display: none; }
+    aside { border-left: 0; border-top: 1px solid var(--rule); max-height: 42vh; }
+    aside.closed #tableWrap { display: none; }
+    aside.closed { max-height: none; }
+    #drawerToggle { display: inline-block; float: right; }
+    #hud { min-width: 0; right: 12px; max-width: none; }
+    #feed { display: none; }
+    #tools { top: 50px; left: 12px; right: 12px; flex-wrap: wrap; max-width: none; }
+    #status { max-width: calc(100% - 24px); }
+    .card { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<div id="map">
+  <canvas id="canvas"></canvas>
+  <div class="card" id="status"><b>New World live</b> <span id="statusText">starting</span></div>
+  <div class="card" id="tools">
+    <button id="follow" class="on" title="keep the selected entity centred">follow</button>
+    <button id="zoomIn">+</button><button id="zoomOut">&minus;</button>
+    <button id="identify" title="watch which entity moves while you walk">identify (walk 3 s)</button>
+    <button id="others" class="on" title="show unnamed entities">others</button>
+    <button id="reset" title="forget every entity and trail (a new game session reuses the keys)">reset</button>
+    <button id="capture" title="start or stop the join-probe capture (30 min)">capture</button>
+  </div>
+  <div class="card" id="feed"></div>
+  <div class="card" id="opr" style="display:none"></div>
+  <div class="card" id="hud">
+    <h1 id="hudName">no player yet <small id="hudKey"></small></h1>
+    <div class="bar health"><div class="label"><span>health</span><b id="hpText">-</b></div><div class="track"><div class="fill" id="hpFill" style="width:0"></div></div></div>
+    <div class="bar mana"><div class="label"><span>mana</span><b id="mpText">-</b></div><div class="track"><div class="fill" id="mpFill" style="width:0"></div></div></div>
+    <div class="bar stamina"><div class="label"><span>stamina <span class="note" id="stNote"></span></span><b id="stText">-</b></div><div class="track"><div class="fill" id="stFill" style="width:0"></div></div></div>
+    <div id="cooldowns"></div>
+    <div class="dim" style="font-size:12px" id="mountText"></div>
+    <div class="dim" style="font-size:12px" id="hudPos"></div>
+    <div class="dim" style="font-size:11px; font-family: var(--mono)" id="hudLayers"></div>
+    <div class="dim" style="font-size:11px" id="hudGear"></div>
+    <button id="asMe" style="display:none; margin-top:6px" title="tell the server this entity is you">this is me</button>
+  </div>
+</div>
+<aside id="aside">
+  <header>
+    <button id="drawerToggle">list</button>
+    <b>entities</b> <span class="dim" id="count"></span>
+    <div class="hint">click a row to centre on it and follow. Names arrive once, when an entity enters scope.
+      Bars are relative to the highest value seen this session.</div>
+  </header>
+  <div id="tableWrap">
+    <table>
+      <thead><tr><th>entity</th><th>name</th><th>pose</th><th class="num">health</th><th class="num">x</th><th class="num">y</th><th class="num">age</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</aside>
+<script>
+// ------------------------------------------------------------------ map geometry
+// aeternum-map (Leaflet CRS.Simple, Transformation(1/16, 0, -1/16, 0), CRS.Simple.scale = 2^zoom,
+// 1024 px tiles): at zoom 6 one world unit is 4 px, level-1 tile (x, y) covers X in [256x, 256x+256)
+// and Y in [256y, 256y+256) with the image's top row at the NORTH edge (Y = 256y + 256). Level c tiles
+// cover 256 * 2^(c-1) units and are named by their level-1 index (multiples of 2^(c-1)); read from the
+// site's getTileUrl: c = 8 - z - 1, x = tx * 2^(c-1), y = (-ty - 1) * 2^(c-1), 0 <= x, y < 64.
+const PX = 4, TILE = 1024;
+const tileUrl = (c, x, y) =>
+  `https://aeternum-map.th.gl/assets/newworld_vitaeeterna/map_l${c}_y${String(y).padStart(3, "0")}_x${String(x).padStart(3, "0")}.webp?v=7`;
+const toPx = p => [p.x * PX, -p.y * PX];          // world -> global pixel space (y flipped)
+
+// javelindata_factiondata: Faction1 = Syndicate, Faction2 = Marauders, Faction3 = Covenant (RequiredAchievementId column)
+const FACTIONS = { 1: "Syndicate", 2: "Marauders", 3: "Covenant" };
+const MAX_POINTS = 4000, MAX_LEG = 25, STALE_S = 90;   // an entity silent for STALE_S leaves the map (its row stays, dimmed)
+let now = Date.now() / 1000;
+const ageOf = slot => now - Math.max(slot.position_at || 0, slot.vitals_at || 0);
+const stale = key => { const slot = objects[key]; return !slot || (ageOf(slot) > STALE_S && key !== selected); };
+const trails = new Map(), tiles = new Map();
+let objects = {}, selected = "", focused = "", meInfo = {};   // selected = identity (server), focused = what the view follows
+const view = { centre: [9300 * PX, -2700 * PX], scale: 0.5, follow: true, showOthers: true };
+
+const canvas = document.getElementById("canvas"), ctx = canvas.getContext("2d");
+const $ = id => document.getElementById(id);
+
+function fit() {
+  const box = canvas.parentElement.getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(200, Math.floor(box.width * ratio));
+  canvas.height = Math.max(200, Math.floor(box.height * ratio));
+  draw();
+}
+window.addEventListener("resize", fit);
+
+function tileImage(c, x, y) {
+  const key = c + "," + x + "," + y;
+  let entry = tiles.get(key);
+  if (!entry) {
+    const image = new Image();
+    entry = { image, ready: false };
+    image.onload = () => { entry.ready = true; draw(); };
+    image.onerror = () => { entry.failed = true; };
+    image.src = tileUrl(c, x, y);
+    tiles.set(key, entry);
+  }
+  return entry;
+}
+
+const ratio = () => window.devicePixelRatio || 1;
+const toScreen = (px, py) => [canvas.width / 2 + (px - view.centre[0]) * view.scale,
+                              canvas.height / 2 + (py - view.centre[1]) * view.scale];
+const fromScreen = (sx, sy) => [view.centre[0] + (sx - canvas.width / 2) / view.scale,
+                                view.centre[1] + (sy - canvas.height / 2) / view.scale];
+const kind = key => {
+  if (key === selected) return "me";
+  const o = objects[key] || {};
+  // Outpost Rush: the warboard manifest puts every player in a team; allies blue, the other team red
+  if (o.team != null && snapshotMyTeam != null) return o.team === snapshotMyTeam ? "ally" : "enemy";
+  return o.npc && o.name ? "animal" : (o.name ? "player" : "other");
+};
+let snapshotMyTeam = null, lastOpr = null;
+// Outpost Rush arena: the three capture-point clusters of the static entities. Sol is the middle one
+// (the midpoint of the other two); Luna is the one nearer the player's team spawn (the team that held
+// Luna 307 to 141 spawned at (1230, 10751)), Astra the far one. Inferred from one match, 2026-09-11.
+const OUTPOST_SITES = [{ name: "Sol", x: 1272, y: 11018 }, { name: "Luna", x: 1370, y: 10880 }, { name: "Astra", x: 1174, y: 11158 }];
+const target = () => objects[focused] || objects[selected];
+const colour = { me: "#8c2f2b", player: "#2f4b7c", ally: "#2f7c4b", enemy: "#c0392b", animal: "#7a5c2e", other: "rgba(138,123,102,0.7)" };
+
+function drawTiles() {
+  const w = canvas.width, h = canvas.height;
+  // pick the level whose 1024 px tile is closest to the screen density
+  const c = Math.min(7, Math.max(1, 1 + Math.round(Math.log2(1 / view.scale))));
+  const step = 1 << (c - 1), span = TILE * step;                 // tile size in level-1 pixel space
+  const [x0, y0] = fromScreen(0, 0), [x1, y1] = fromScreen(w, h);
+  const i0 = Math.floor(x0 / span), i1 = Math.floor(x1 / span);
+  const j0 = Math.floor(-y1 / span), j1 = Math.floor(-y0 / span);
+  for (let i = i0; i <= i1; i++) {
+    for (let j = j0; j <= j1; j++) {
+      const x = i * step, y = j * step;
+      if (x < 0 || y < 0 || x >= 64 || y >= 64) continue;
+      const entry = tileImage(c, x, y);
+      if (!entry.ready) continue;
+      const [sx, sy] = toScreen(i * span, -(j + 1) * span);       // top-left = north-west corner
+      ctx.drawImage(entry.image, sx, sy, span * view.scale + 0.5, span * view.scale + 0.5);
+    }
+  }
+}
+
+function draw() {
+  const w = canvas.width, h = canvas.height, r = ratio();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#ebe2cf"; ctx.fillRect(0, 0, w, h);
+  const followed = target();
+  if (view.follow && followed && followed.position) view.centre = toPx(followed.position);
+  drawTiles();
+  // a light paper wash over the tiles so the ink reads on top
+  ctx.fillStyle = "rgba(243,236,220,0.18)"; ctx.fillRect(0, 0, w, h);
+
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  const labels = [];
+  // the player is drawn last so nothing covers it
+  const order = [...trails.keys()].sort((a, b) => (a === selected) - (b === selected));
+  for (const key of order) {
+    const trail = trails.get(key), k = kind(key);
+    if ((k === "other" && !view.showOthers) || stale(key)) continue;
+    ctx.strokeStyle = colour[k]; ctx.lineWidth = (k === "me" ? 2.5 : 1.5) * r;
+    ctx.beginPath();
+    trail.forEach((p, index) => {
+      const [px, py] = toPx(p), [sx, sy] = toScreen(px, py);
+      if (!index) { ctx.moveTo(sx, sy); return; }
+      const q = toPx(trail[index - 1]);
+      if (Math.abs(px - q[0]) + Math.abs(py - q[1]) > MAX_LEG * PX) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    });
+    ctx.stroke();
+    const [lx, ly] = toScreen(...toPx(trail[trail.length - 1]));
+    if (lx < -40 || ly < -40 || lx > w + 40 || ly > h + 40) continue;
+    ctx.fillStyle = k === "animal" ? "#f3ecdc" : colour[k]; ctx.strokeStyle = k === "animal" ? colour.animal : "#f3ecdc"; ctx.lineWidth = 1.5 * r;
+    if ((objects[key] || {}).capture_point) {                    // Outpost Rush outpost: a diamond, named by its place
+      const p = objects[key].position || {}, post = OUTPOST_SITES.find(s => Math.hypot(s.x - p.x, s.y - p.y) < 60);
+      const st = post && lastOpr && lastOpr.outposts ? lastOpr.outposts[post.name] : null;
+      const mine = snapshotMyTeam ?? 0;
+      ctx.fillStyle = st && st.owner != null ? (st.owner === mine ? colour.ally : colour.enemy) : "rgba(120,80,160,0.85)"; ctx.strokeStyle = "#f3ecdc";
+      ctx.beginPath(); ctx.moveTo(lx, ly - 8 * r); ctx.lineTo(lx + 8 * r, ly); ctx.lineTo(lx, ly + 8 * r); ctx.lineTo(lx - 8 * r, ly); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#2a2622"; ctx.font = `${10 * r}px ${getComputedStyle(document.body).getPropertyValue("--mono")}`;
+      const cap = st && st.capturing != null ? ` (${st.capturing === mine ? "we" : "they"} capture ${st.progress})` : "";
+      ctx.fillText(post ? `${post.name}${cap}` : `outpost ${objects[key].cp_progress ?? ""}`, lx + 10 * r, ly + 4 * r);
+      continue;
+    }
+    if ((objects[key] || {}).static) {                           // a placed thing: camp, node, object; a small square
+      ctx.fillStyle = objects[key].gatherable ? "rgba(77,124,74,0.8)" : "rgba(138,123,102,0.6)";
+      ctx.fillRect(lx - 3 * r, ly - 3 * r, 6 * r, 6 * r);
+      continue;
+    }
+    ctx.beginPath(); ctx.arc(lx, ly, (k === "me" ? 5 : 3.5) * r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const heading = (objects[key] || {}).heading;
+    if (heading != null && view.scale >= 0.15) {                   // facing wedge: east = 0, north = 90, screen y is down
+      const a = heading * Math.PI / 180, len = (k === "me" ? 16 : 11) * r, base = (k === "me" ? 5 : 3.5) * r;
+      const ux = Math.cos(a), uy = -Math.sin(a);
+      ctx.fillStyle = colour[k];
+      ctx.beginPath();
+      ctx.moveTo(lx + ux * (base + len), ly + uy * (base + len));
+      ctx.lineTo(lx - uy * base * 0.8 + ux * base, ly + ux * base * 0.8 + uy * base);
+      ctx.lineTo(lx + uy * base * 0.8 + ux * base, ly - ux * base * 0.8 + uy * base);
+      ctx.closePath(); ctx.fill();
+    }
+    if (key === focused && focused !== selected) {                 // the followed entity wears a ring
+      ctx.strokeStyle = "#2a2622"; ctx.lineWidth = 1 * r;
+      ctx.beginPath(); ctx.arc(lx, ly, 9 * r, 0, Math.PI * 2); ctx.stroke();
+    }
+    const slot = objects[key] || {}, kindName = (slot.vitals_ids || [])[0] || (slot.static && slot.gatherable ? "node" : null);
+    const name = k === "me" ? (slot.name || "you") : (k === "animal" && slot.name ? `${slot.name}'s ${(slot.vitals_ids || [])[0] || "companion"}` : (slot.name || (kindName && view.scale >= 0.5 ? kindName : null)));
+    const pose = poseText(slot);
+    if (name && (k === "me" || view.scale >= 0.3)) labels.push([lx, ly, pose ? `${name} · ${pose}` : name, k]);
+  }
+  ctx.font = `${12 * r}px ${getComputedStyle(document.body).getPropertyValue("--serif")}`;
+  ctx.textBaseline = "middle";
+  const placed = [];                                              // greedy: a label that would overlap one already drawn is skipped
+  for (const [lx, ly, name, k] of labels.reverse()) {              // reversed: the player's label is placed first
+    const tw = ctx.measureText(name).width, x = lx + 9 * r, y = ly - 9 * r;
+    const box = [x - 3 * r, y - 8 * r, tw + 6 * r, 16 * r];
+    if (k !== "me" && placed.some(b => box[0] < b[0] + b[2] && box[0] + box[2] > b[0] && box[1] < b[1] + b[3] && box[1] + box[3] > b[1])) continue;
+    placed.push(box);
+    ctx.fillStyle = k === "me" ? "rgba(140,47,43,0.92)" : "rgba(243,236,220,0.88)"; ctx.fillRect(...box);
+    ctx.fillStyle = k === "me" ? "#f3ecdc" : "#2a2622"; ctx.fillText(name, x, y);
+  }
+  ctx.fillStyle = "#6b6157"; ctx.font = `${11 * r}px ${getComputedStyle(document.body).getPropertyValue("--mono")}`;
+  ctx.textBaseline = "alphabetic";
+  const [cx, cy] = fromScreen(w / 2, h / 2);
+  ctx.fillText(`centre x=${(cx / PX).toFixed(0)} y=${(-cy / PX).toFixed(0)}   ${(w / view.scale / PX).toFixed(0)} units across`,
+    12 * r, h - 10 * r);
+}
+
+// ------------------------------------------------------------------ pan, zoom, pick
+const pointers = new Map();
+let dragged = false, pinch = null;
+canvas.addEventListener("pointerdown", e => {
+  pointers.set(e.pointerId, [e.clientX, e.clientY]); dragged = false;
+  canvas.setPointerCapture(e.pointerId); canvas.classList.add("dragging");
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); }
+});
+canvas.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pointers.size === 1) {
+    const dx = (e.clientX - prev[0]) * ratio(), dy = (e.clientY - prev[1]) * ratio();
+    if (Math.abs(dx) + Math.abs(dy) > 2) { dragged = true; setFollow(false); }
+    view.centre = [view.centre[0] - dx / view.scale, view.centre[1] - dy / view.scale];
+    draw();
+  } else if (pointers.size === 2 && pinch) {
+    const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    zoomAt((a[0] + b[0]) / 2 * ratio(), (a[1] + b[1]) / 2 * ratio(), d / pinch); pinch = d; dragged = true;
+  }
+});
+function endPointer(e) {
+  if (pointers.size === 1 && !dragged) pickAt(e.clientX * ratio(), e.clientY * ratio());
+  pointers.delete(e.pointerId); pinch = null;
+  if (!pointers.size) canvas.classList.remove("dragging");
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  zoomAt(e.offsetX * ratio(), e.offsetY * ratio(), Math.exp(-e.deltaY * 0.0015));
+}, { passive: false });
+function zoomAt(sx, sy, factor) {
+  const [wx, wy] = fromScreen(sx, sy);
+  view.scale = Math.min(2, Math.max(0.01, view.scale * factor));
+  const [nx, ny] = fromScreen(sx, sy);
+  view.centre = [view.centre[0] + (wx - nx), view.centre[1] + (wy - ny)];
+  draw();
+}
+$("zoomIn").onclick = () => zoomAt(canvas.width / 2, canvas.height / 2, 1.5);
+$("zoomOut").onclick = () => zoomAt(canvas.width / 2, canvas.height / 2, 1 / 1.5);
+function pickAt(sx, sy) {
+  let best = null, bestD = 18 * ratio();
+  for (const [key, trail] of trails) {
+    if ((kind(key) === "other" && !view.showOthers) || stale(key)) continue;
+    const [lx, ly] = toScreen(...toPx(trail[trail.length - 1]));
+    const d = Math.hypot(lx - sx, ly - sy);
+    if (d < bestD) { best = key; bestD = d; }
+  }
+  if (best) select(best);
+}
+function select(key) { focused = key; setFollow(true); render(); }   // centre and follow, identity untouched
+async function pickAsMe() {
+  // the server keeps the identity for the session; with entity keys it is stable until you pick again
+  try { await fetch("/pick?key=" + encodeURIComponent(focused), { method: "POST" }); } catch (error) {}
+}
+$("asMe").onclick = pickAsMe;
+function setFollow(on) { view.follow = on; $("follow").classList.toggle("on", on); if (on) draw(); }
+$("follow").onclick = () => setFollow(!view.follow);
+$("others").onclick = () => { view.showOthers = !view.showOthers; $("others").classList.toggle("on", view.showOthers); draw(); };
+$("reset").onclick = async () => {
+  try { await fetch("/reset", { method: "POST" }); } catch (error) {}
+  trails.clear(); objects = {}; focused = ""; render();
+};
+$("capture").onclick = async () => {
+  const running = $("capture").classList.contains("on");
+  try { await fetch(running ? "/capture/stop" : "/capture/start?seconds=1800", { method: "POST" }); } catch (error) {}
+};
+$("drawerToggle").onclick = () => $("aside").classList.toggle("closed");
+$("identify").onclick = async e => {
+  e.target.disabled = true; e.target.textContent = "walk now...";
+  try { await fetch("/calibrate", { method: "POST" }); } catch (error) {}
+  e.target.disabled = false; e.target.textContent = "identify (walk 3 s)";
+};
+
+// ------------------------------------------------------------------ state
+function poseText(slot) {           // layer 0 is locomotion, layer 1 the weapon; idle alone says nothing worth ink
+  const p = slot.pose || {}, parts = [];
+  if (p["3"] === "dead") return "dead";
+  if (slot.stance && slot.stance !== "standing") parts.push(slot.stance);
+  if (slot.interacting && !slot.mounted) parts.push("interacting");   // Interact 01 01 01 also covers riding, so only on foot
+  if (slot.mounted && !slot.npc) parts.push(slot.mount_name ? `on ${slot.mount_name}` : "mounted");
+  if (p["0"] && p["0"] !== "idle") parts.push(p["0"]);
+  if (p["1"] && p["1"] !== "weapon out") parts.push(p["1"]); else if (p["1"] === "weapon out" && !parts.length) parts.push("weapon out");
+  return parts.join(", ");
+}
+function bar(prefix, value, key, ceiling) {
+  if (value == null) { $(prefix + "Text").textContent = "-"; $(prefix + "Fill").style.width = "0"; return; }
+  const max = Math.max(ceiling || 0, value);               // the server remembers the highest value seen
+  $(prefix + "Text").textContent = `${value} / ${max}`;
+  $(prefix + "Fill").style.width = `${Math.min(100, 100 * value / (max || 1))}%`;
+}
+
+function render(snapshot) {
+  if (snapshot) {
+    meInfo = snapshot.me || {}; objects = snapshot.objects || {}; snapshotMyTeam = snapshot.my_team ?? null;
+    if (meInfo.object && meInfo.object !== selected) { selected = meInfo.object; if (!focused) setFollow(true); }
+    for (const [key, slot] of Object.entries(objects)) {
+      if (!slot.position) continue;
+      let trail = trails.get(key);
+      if (!trail) { trail = []; trails.set(key, trail); }
+      const last = trail[trail.length - 1];
+      if (!last || last.x !== slot.position.x || last.y !== slot.position.y) trail.push(slot.position);
+      while (trail.length > MAX_POINTS) trail.shift();
+    }
+    const feed = (snapshot.feed || []).slice(-10).reverse(), chat = (snapshot.chat || []).slice(-6).reverse();
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const targeted = snapshot.targeted_by || [];
+    const opr = snapshot.opr; lastOpr = opr;
+    $("opr").style.display = opr ? "" : "none";
+    if (opr) {
+      const mine = snapshotMyTeam ?? 0, score = opr.score || [0, 0];
+      const posts = Object.entries(opr.outposts || {}).map(([name, s]) => {
+        const own = s.owner == null ? "dim" : (s.owner === mine ? "ally" : "enemy");
+        const cap = s.capturing != null ? ` <span class="${s.capturing === mine ? "ally" : "enemy"}">capturing ${s.progress}</span>` : "";
+        return `<span class="${own}">${name}</span>${cap}`;
+      }).join(" · ");
+      const rows = (opr.board || []).map(r => `<tr class="${r.team === mine ? "ally" : "enemy"}${r.name === (objects[selected] || {}).name ? " me" : ""}"><td>${esc(r.name)}</td><td>${r.score ?? 0}</td><td>${r.kills ?? 0}/${r.deaths ?? 0}/${r.assists ?? 0}</td><td>${(r.damage ?? 0).toLocaleString()}</td><td>${(r.healing ?? 0).toLocaleString()}</td></tr>`).join("");
+      $("opr").innerHTML = `<div class="score"><span class="ally">${score[0]}</span><span class="dim" style="font-size:12px">Outpost Rush</span><span class="enemy">${score[1]}</span></div>` +
+        `<div class="dim" style="margin:2px 0 4px">${posts}</div>` +
+        (rows ? `<table><tr><th>player</th><th>score</th><th>k/d/a</th><th>damage</th><th>healing</th></tr>${rows}</table>` : "");
+    }
+    $("feed").innerHTML = (targeted.length ? `<div class="chat"><span><b>targeted by</b> ${targeted.map(esc).join(", ")}</span></div>` : "") + (chat.length ? chat.map(c =>
+      `<div class="chat"><span><b>${esc(c.name)}</b> ${esc(c.text)}</span><span class="dim">${Math.max(0, snapshot.now - c.at).toFixed(0)}s</span></div>`).join("") + "<hr>" : "") +
+      (feed.length ? feed.map(f => {
+        const who = f.key === selected ? "you" : (f.key === "dealt" ? `you hit ${f.target_name || "?"}` : (f.name || f.key)), age = Math.max(0, snapshot.now - f.at);
+        const kind = f.key === "dealt" ? "dealt" : (f.key === "death" ? "hit" : (f.delta < 0 ? "hit" : "heal")), types = f.types ? ` <span class="dim">${f.types.join("+")}${f.dot ? " dot" : ""}</span>` : "";
+        return `<div><span>${esc(who)}${types}</span><b class="${kind}">${f.delta > 0 ? "+" : ""}${f.delta}</b><span class="dim">${age.toFixed(0)}s</span></div>`;
+      }).join("") : '<span class="dim">damage feed: no health change yet</span>');
+    const age = snapshot.last_line_age_s, status = $("statusText"), cap = snapshot.capture || {};
+    const capText = cap.running ? `capture ${Math.round(snapshot.now - cap.since)}s / ${cap.seconds}s` : (cap.lock ? `capture held elsewhere: ${cap.lock}` : "no capture");
+    status.textContent = (age == null ? "no data yet" : (age > 5 ? `stale, last line ${age}s ago` : `live, ${age}s`)) + " · " + capText;
+    status.className = age == null || age > 5 ? "warn" : "";
+    $("capture").textContent = cap.running ? "stop capture" : "start capture";
+    $("capture").classList.toggle("on", !!cap.running);
+    $("capture").disabled = !cap.running && !!cap.lock;
+  }
+  const me = objects[selected] || {};
+  const shown = focused && focused !== selected ? (objects[focused] || {}) : me;
+  $("hudName").firstChild.textContent = (shown.name || (focused && focused !== selected ? focused : (selected ? "you, unnamed" : "no player yet"))) + " ";
+  $("asMe").style.display = focused && focused !== selected ? "inline-block" : "none";
+  $("hudKey").textContent = focused && focused !== selected ? `${focused}, following` :
+    (selected ? `${selected}, you${meInfo.method ? ", " + meInfo.method : ""}${meInfo.stale ? ", stale" : ""}` : "");
+  bar("hp", shown.health, "health", shown.health_max); bar("mp", shown.mana, "mana", shown.mana_max);
+  bar("st", shown.stamina, "stamina", shown.stamina_max || 100);
+  const cds = shown.cooldowns || {};
+  $("cooldowns").innerHTML = Object.keys(cds).sort().map(slot => {
+    const cd = cds[slot], total = Math.max(cd.expiry - cd.start, 0.001), left = Math.max(0, cd.expiry - now);
+    return `<div class="cd ${left > 0 ? "" : "ready"}"><span title="${cd.id}">${cd.name && cd.name !== cd.id ? cd.name : "slot " + slot} <span class="id">${cd.name && cd.name !== cd.id ? "" : cd.id.slice(0, 6)}</span></span>` +
+      `<div class="track"><div class="fill" style="width:${left > 0 ? 100 * left / total : 100}%"></div></div>` +
+      `<b>${left > 0 ? left.toFixed(1) + "s" : "ready"}</b></div>`;
+  }).join("") || '<div class="note" style="font-size:11px">cooldowns: none seen yet (they arrive when an ability is used)</div>';
+  $("stNote").textContent = shown.winded_s > 0 ? "winded" : (shown.regen_delay_s > 0 ? "regen delay" : "");
+  const attrs = shown.attributes ? Object.entries(shown.attributes).filter(([, v]) => v > 5).map(([k, v]) => `${k} ${v}`).join(" ") : "";
+  $("hudGear").textContent = [(shown.titles || [])[0] ? `"${shown.titles[0]}"` : "", attrs, (shown.weapons || []).length ? "weapons: " + shown.weapons.join(", ") : "",
+    (shown.effects || []).length ? "effects: " + shown.effects.slice(-6).join(", ") : "", shown.level ? `level ${shown.level}` + (shown.xp ? ` xp ${shown.xp.toLocaleString()}${shown.rested_xp ? ` (rested ${shown.rested_xp.toLocaleString()})` : ""}` : "") : "",
+    shown.faction ? (FACTIONS[shown.faction] || `faction ${shown.faction}`) : ""].filter(Boolean).join("  ·  ");
+  $("mountText").textContent = shown.mounted ? `mounted${shown.mount_stamina != null ? ", horse stamina " + shown.mount_stamina : ""}` : "";
+  $("hudPos").textContent = shown.position ? `x ${shown.position.x}  y ${shown.position.y}  elev ${shown.position.elevation ?? shown.position.elev_raw} m` : "";
+  // the four slayer layers as the wire has them: state id (hex) and sequence id, so an unknown one can be reported
+  const ids = shown.pose_id || {}, seqs = shown.pose_seq || {}, names = shown.pose || {};
+  $("hudLayers").textContent = ["0", "1", "2", "3"].filter(l => ids[l] != null).map(l =>
+    `L${l} ${names[l] && !names[l].startsWith("L") ? names[l] : "?"} 0x${ids[l].toString(16)}${seqs[l] != null ? "/" + seqs[l].toString(16) : ""}`).join("   ") +
+    (shown.stance ? `   stance ${shown.stance}` : "");
+
+  now = (snapshot && snapshot.now) || Date.now() / 1000;
+  const rows = Object.entries(objects).filter(([key, slot]) => slot.position || slot.name || slot.health != null)
+    .sort((a, b) => {
+      if (a[0] === selected) return -1; if (b[0] === selected) return 1;
+      const as = stale(a[0]) ? 1 : 0, bs = stale(b[0]) ? 1 : 0; if (as !== bs) return as - bs;
+      const an = a[1].name ? 1 : 0, bn = b[1].name ? 1 : 0; if (an !== bn) return bn - an;
+      return (b[1].position_at || b[1].vitals_at || 0) - (a[1].position_at || a[1].vitals_at || 0);
+    });
+  $("count").textContent = `${rows.length}`;
+  $("rows").innerHTML = rows.map(([key, slot]) => {
+    const age = Math.max(slot.position_at || 0, slot.vitals_at || 0), p = slot.position || {};
+    const cls = (key === selected ? "me" : (slot.npc && slot.name ? "animal" : (slot.name ? "named" : ""))) + (key === focused ? " focused" : "") + (stale(key) ? " stale" : "")
+      + (slot.team != null && snapshotMyTeam != null ? (slot.team === snapshotMyTeam ? " ally" : " enemy") : "");
+    return `<tr class="${cls}" data-key="${key}"><td>${key}</td><td title="${(slot.weapons || []).join(", ")}">${slot.name ? (slot.npc ? `<span class="dim">${slot.name}'s ${(slot.vitals_ids || [])[0] || "companion"}</span>` : slot.name) : `<span class="dim">${(slot.vitals_ids || [])[0] || "?"}</span>`}${slot.level ? ` <span class="dim">${slot.level}</span>` : ""}</td><td class="dim">${poseText(slot)}</td>` +
+      `<td class="num">${slot.health ?? "-"}</td><td class="num">${p.x ?? "-"}</td><td class="num">${p.y ?? "-"}</td>` +
+      `<td class="num">${age ? (now - age).toFixed(0) + "s" : "-"}</td></tr>`;
+  }).join("");
+  for (const row of document.querySelectorAll("#rows tr")) row.onclick = () => select(row.dataset.key);
+  draw();
+}
+
+async function poll() {
+  try {
+    const response = await fetch("/state", { cache: "no-store" });
+    render(await response.json());
+  } catch (error) {
+    $("statusText").textContent = `cannot reach the server on port ${location.port || 80}`;
+    $("statusText").className = "warn";
+  }
+  setTimeout(poll, 250);
+}
+fit(); poll();
+</script>
+</body>
+</html>
